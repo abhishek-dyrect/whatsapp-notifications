@@ -561,68 +561,429 @@ function WAEditor({ template, onClose, onSave }) {
   );
 }
 
-/* ── Templates table ─────────────────────────────── */
-function WATemplates({ templates, onEdit, onClone, onNewTemplate }) {
+/* ── Filter chip ──────────────────────────────────── */
+function FilterChip({ icon, label, value, onClear }) {
   return (
-    <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)', borderRadius:'var(--radius-md)', overflow:'hidden' }}>
-      <div style={{ display:'flex', alignItems:'center', gap:8, padding:'12px 16px', borderBottom:'1px solid var(--border-default)' }}>
-        <div style={{ fontSize:14, fontWeight:600, color:'var(--fg-1)', flex:1 }}>Templates</div>
-        <span style={{ fontSize:12, color:'var(--fg-3)' }}>{templates.length}/250 · <a href="#" style={{ color:'var(--brand-blue)', textDecoration:'none' }}>verified business: 6000</a></span>
-        <button
-          onClick={onNewTemplate}
-          style={{ height:32, padding:'0 12px', borderRadius:'var(--radius-sm)', border:'none', background:'var(--brand-blue)', color:'#fff', fontSize:13, fontWeight:500, cursor:'pointer', display:'flex', alignItems:'center', gap:6 }}>
-          <Icon name="plus" size={13}/> New template
+    <div style={{
+      display:'inline-flex', alignItems:'center', gap:5,
+      height:30, padding:'0 10px', borderRadius:'var(--radius-sm)',
+      border:'1px solid var(--border-default)', background:'var(--bg-surface)',
+      fontSize:12, fontWeight:500, color:'var(--fg-2)', cursor:'pointer',
+      userSelect:'none',
+    }}>
+      {icon}
+      <span style={{ color:'var(--fg-3)', fontWeight:400 }}>{label}:</span>
+      <span style={{ color:'var(--fg-1)', fontWeight:500 }}>{value}</span>
+      <span onClick={onClear} style={{ marginLeft:2, color:'var(--fg-3)', display:'flex', alignItems:'center', cursor:'pointer' }}>
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M11 5 5 11M5 5l6 6"/></svg>
+      </span>
+    </div>
+  );
+}
+
+/* ── Templates table ─────────────────────────────── */
+const ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
+
+function WATemplates({ templates, onEdit, onClone, onNewTemplate }) {
+  const [search, setSearch]           = useState('');
+  const [filterStatus, setFilterStatus]   = useState('');
+  const [filterEvent, setFilterEvent]     = useState('');
+  const [filterOwner, setFilterOwner]     = useState('');
+  const [selected, setSelected]       = useState(new Set());
+  const [hovRow, setHovRow]           = useState(null);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [page, setPage]               = useState(1);
+  const [showStatusDrop, setShowStatusDrop]   = useState(false);
+  const [showEventDrop, setShowEventDrop]     = useState(false);
+  const [showOwnerDrop, setShowOwnerDrop]     = useState(false);
+  const [showAddFilter, setShowAddFilter]     = useState(false);
+  const [activeFilters, setActiveFilters] = useState(['status','event']);
+
+  // Derived filter values
+  const allEvents  = [...new Set(templates.map(t => t.eventLabel))];
+  const allOwners  = ['Dyrect', 'Brand'];
+  const allStatuses = ['approved','pending','rejected'];
+
+  // Filter + search
+  const filtered = templates.filter(t => {
+    const q = search.toLowerCase();
+    const matchSearch = !q || t.name.toLowerCase().includes(q) || t.eventLabel.toLowerCase().includes(q);
+    const matchStatus = !filterStatus || t.status === filterStatus;
+    const matchEvent  = !filterEvent  || t.eventLabel === filterEvent;
+    const matchOwner  = !filterOwner  || (filterOwner === 'Dyrect' ? t.isDefault : !t.isDefault);
+    return matchSearch && matchStatus && matchEvent && matchOwner;
+  });
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(filtered.length / rowsPerPage));
+  const safePage   = Math.min(page, totalPages);
+  const pageSlice  = filtered.slice((safePage - 1) * rowsPerPage, safePage * rowsPerPage);
+
+  // Selection
+  const allSelected = pageSlice.length > 0 && pageSlice.every(t => selected.has(t.id));
+  const toggleAll   = () => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (allSelected) pageSlice.forEach(t => next.delete(t.id));
+      else             pageSlice.forEach(t => next.add(t.id));
+      return next;
+    });
+  };
+  const toggleRow = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const removeFilter = (key) => {
+    if (key === 'status') { setFilterStatus(''); }
+    if (key === 'event')  { setFilterEvent('');  }
+    if (key === 'owner')  { setFilterOwner('');  }
+    setActiveFilters(prev => prev.filter(f => f !== key));
+  };
+
+  const addFilter = (key) => {
+    if (!activeFilters.includes(key)) setActiveFilters(prev => [...prev, key]);
+    setShowAddFilter(false);
+  };
+
+  const FILTER_ICON = {
+    status: <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="8" cy="8" r="5.5"/><path d="M5.5 8h5M6.5 5.5h3M7 10.5h2"/></svg>,
+    event:  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><rect x="2" y="3" width="12" height="11" rx="1.5"/><path d="M5 1.5v3M11 1.5v3M2 7h12"/></svg>,
+    owner:  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"><circle cx="8" cy="5.5" r="2.5"/><path d="M3 13c.5-2.5 2.5-4 5-4s4.5 1.5 5 4"/></svg>,
+  };
+
+  // Dropdown helper
+  function Dropdown({ options, value, onChange, onClose }) {
+    return (
+      <div style={{ position:'absolute', top:'100%', left:0, marginTop:4, background:'var(--bg-surface)', border:'1px solid var(--border-default)', borderRadius:'var(--radius-sm)', boxShadow:'var(--shadow-md)', zIndex:200, minWidth:160, overflow:'hidden' }}>
+        {options.map(opt => (
+          <div key={opt} onClick={() => { onChange(opt === value ? '' : opt); onClose(); }} style={{
+            padding:'8px 12px', fontSize:13, cursor:'pointer',
+            color: opt === value ? 'var(--brand-blue)' : 'var(--fg-1)',
+            background: opt === value ? 'var(--brand-blue-100)' : 'transparent',
+            fontWeight: opt === value ? 600 : 400,
+          }}
+          onMouseEnter={e => { if (opt !== value) e.currentTarget.style.background = 'var(--bg-muted)'; }}
+          onMouseLeave={e => { e.currentTarget.style.background = opt === value ? 'var(--brand-blue-100)' : 'transparent'; }}
+          >
+            {opt.charAt(0).toUpperCase() + opt.slice(1)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)', borderRadius:'var(--radius-md)', overflow:'hidden', display:'flex', flexDirection:'column' }}>
+
+      {/* ── Top toolbar ── */}
+      <div style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', borderBottom:'1px solid var(--border-default)' }}>
+        {/* Search */}
+        <div style={{ position:'relative', flex:1, maxWidth:280 }}>
+          <svg style={{ position:'absolute', left:9, top:'50%', transform:'translateY(-50%)', color:'var(--fg-3)', pointerEvents:'none' }} width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="7" cy="7" r="4"/><path d="m12 12-2.5-2.5"/></svg>
+          <input
+            value={search}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
+            placeholder="Search templates…"
+            style={{ width:'100%', height:32, padding:'0 10px 0 30px', borderRadius:'var(--radius-sm)', border:'1px solid var(--border-default)', background:'var(--bg-muted)', fontSize:13, color:'var(--fg-1)', outline:'none', boxSizing:'border-box' }}
+          />
+        </div>
+
+        <div style={{ flex:1 }} />
+
+        {/* Count */}
+        <span style={{ fontSize:12, color:'var(--fg-3)', whiteSpace:'nowrap' }}>
+          {selected.size > 0
+            ? <><strong style={{ color:'var(--brand-blue)' }}>{selected.size}</strong> selected · </>
+            : null}
+          <strong style={{ color:'var(--fg-2)' }}>{filtered.length}</strong> of {templates.length}
+          <span style={{ color:'var(--border-strong)' }}> · </span>
+          <a href="#" style={{ color:'var(--brand-blue)', textDecoration:'none', fontSize:12 }}>{templates.length}/250 templates</a>
+        </span>
+
+        {/* New template */}
+        <button onClick={onNewTemplate} style={{ height:32, padding:'0 12px', borderRadius:'var(--radius-sm)', border:'none', background:'var(--brand-blue)', color:'#fff', fontSize:13, fontWeight:500, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:5, flexShrink:0 }}>
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M8 3v10M3 8h10"/></svg>
+          New template
         </button>
       </div>
-      <table style={{ width:'100%', borderCollapse:'collapse', fontSize:14 }}>
-        <thead>
-          <tr>
-            {['Template','Event','Owner','Status','Quality','7d Delivery','7d Read',''].map((h,i) => (
-              <th key={i} style={{ textAlign:'left', padding:'11px 16px', fontWeight:500, color:'var(--slate-700)', background:'var(--bg-muted)', fontSize:12, borderBottom:'1px solid var(--border-default)', whiteSpace:'nowrap', ...(i===7?{width:80}:{}) }}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {templates.map((t, i) => (
-            <tr key={t.id} style={{ borderTop: i===0 ? 'none':'1px solid var(--border-default)' }}>
-              <td style={{ padding:'12px 16px', verticalAlign:'middle' }}>
-                <div style={{ fontFamily:'var(--font-mono)', fontSize:13, fontWeight:500, color:'var(--fg-1)' }}>{t.name}</div>
-                {t.buttons?.length > 0 && <div style={{ fontSize:11, color:'var(--fg-3)', marginTop:2 }}>{t.buttons.length} button{t.buttons.length>1?'s':''}</div>}
-              </td>
-              <td style={{ padding:'12px 16px', verticalAlign:'middle' }}>
-                <span style={{ fontSize:12, color:'var(--fg-2)', background:'var(--bg-muted)', padding:'2px 7px', borderRadius:4, fontWeight:500 }}>{t.eventLabel}</span>
-              </td>
-              <td style={{ padding:'12px 16px', verticalAlign:'middle' }}>
-                <span style={{ fontSize:12, color: t.isDefault ? 'var(--brand-blue)':'var(--fg-2)', fontWeight:500 }}>{t.isDefault ? 'Dyrect':'Brand'}</span>
-              </td>
-              <td style={{ padding:'12px 16px', verticalAlign:'middle' }}><StatusBadge status={t.status} /></td>
-              <td style={{ padding:'12px 16px', verticalAlign:'middle' }}><QualityPip rating={t.qualityRating} /></td>
-              <td style={{ padding:'12px 16px', verticalAlign:'middle', fontFamily:'var(--font-display)', fontWeight:600, fontSize:13, letterSpacing:'-0.02em', color: t.deliveryRate ? 'var(--success)':'var(--fg-3)' }}>{t.deliveryRate!=null?`${t.deliveryRate}%`:'—'}</td>
-              <td style={{ padding:'12px 16px', verticalAlign:'middle', fontFamily:'var(--font-display)', fontWeight:600, fontSize:13, letterSpacing:'-0.02em', color: t.readRate ? 'var(--brand-blue)':'var(--fg-3)' }}>{t.readRate!=null?`${t.readRate}%`:'—'}</td>
-              <td style={{ padding:'12px 16px', verticalAlign:'middle' }}>
-                <div style={{ display:'flex', gap:4 }}>
-                  <button style={tblStyles.actionBtn} onClick={() => onEdit(t)} title="Edit">
-                    <Icon name="edit" size={13}/>
-                  </button>
-                  <button style={tblStyles.actionBtn} onClick={() => onClone(t)} title="Clone">
-                    <Icon name="clone" size={13}/>
-                  </button>
+
+      {/* ── Filter chips row ── */}
+      <div style={{ display:'flex', alignItems:'center', gap:6, padding:'10px 16px', borderBottom:'1px solid var(--border-default)', background:'var(--bg-surface)', flexWrap:'wrap' }}>
+        {activeFilters.includes('status') && (
+          <div style={{ position:'relative' }}>
+            <div
+              onClick={() => { setShowStatusDrop(v => !v); setShowEventDrop(false); setShowOwnerDrop(false); setShowAddFilter(false); }}
+              style={{ display:'inline-flex', alignItems:'center', gap:5, height:30, padding:'0 10px', borderRadius:'var(--radius-sm)', border:`1px solid ${filterStatus ? 'var(--brand-blue)' : 'var(--border-default)'}`, background: filterStatus ? 'var(--brand-blue-100)' : 'var(--bg-surface)', fontSize:12, fontWeight:500, color: filterStatus ? 'var(--brand-blue)' : 'var(--fg-2)', cursor:'pointer', userSelect:'none' }}>
+              {FILTER_ICON.status}
+              <span style={{ color: filterStatus ? 'var(--fg-3)' : 'var(--fg-3)', fontWeight:400 }}>Status</span>
+              {filterStatus && <><span style={{ color:'var(--border-strong)', margin:'0 2px' }}>·</span><span style={{ fontWeight:600, color:'var(--brand-blue)' }}>{filterStatus.charAt(0).toUpperCase()+filterStatus.slice(1)}</span></>}
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m4 6 4 4 4-4"/></svg>
+            </div>
+            {showStatusDrop && <Dropdown options={allStatuses} value={filterStatus} onChange={v => { setFilterStatus(v); setPage(1); }} onClose={() => setShowStatusDrop(false)} />}
+          </div>
+        )}
+
+        {activeFilters.includes('event') && (
+          <div style={{ position:'relative' }}>
+            <div
+              onClick={() => { setShowEventDrop(v => !v); setShowStatusDrop(false); setShowOwnerDrop(false); setShowAddFilter(false); }}
+              style={{ display:'inline-flex', alignItems:'center', gap:5, height:30, padding:'0 10px', borderRadius:'var(--radius-sm)', border:`1px solid ${filterEvent ? 'var(--brand-blue)' : 'var(--border-default)'}`, background: filterEvent ? 'var(--brand-blue-100)' : 'var(--bg-surface)', fontSize:12, fontWeight:500, color: filterEvent ? 'var(--brand-blue)' : 'var(--fg-2)', cursor:'pointer', userSelect:'none' }}>
+              {FILTER_ICON.event}
+              <span style={{ fontWeight:400, color:'var(--fg-3)' }}>Event</span>
+              {filterEvent && <><span style={{ color:'var(--border-strong)', margin:'0 2px' }}>·</span><span style={{ fontWeight:600, color:'var(--brand-blue)' }}>{filterEvent}</span></>}
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m4 6 4 4 4-4"/></svg>
+            </div>
+            {showEventDrop && <Dropdown options={allEvents} value={filterEvent} onChange={v => { setFilterEvent(v); setPage(1); }} onClose={() => setShowEventDrop(false)} />}
+          </div>
+        )}
+
+        {activeFilters.includes('owner') && (
+          <div style={{ position:'relative' }}>
+            <div
+              onClick={() => { setShowOwnerDrop(v => !v); setShowStatusDrop(false); setShowEventDrop(false); setShowAddFilter(false); }}
+              style={{ display:'inline-flex', alignItems:'center', gap:5, height:30, padding:'0 10px', borderRadius:'var(--radius-sm)', border:`1px solid ${filterOwner ? 'var(--brand-blue)' : 'var(--border-default)'}`, background: filterOwner ? 'var(--brand-blue-100)' : 'var(--bg-surface)', fontSize:12, fontWeight:500, color: filterOwner ? 'var(--brand-blue)' : 'var(--fg-2)', cursor:'pointer', userSelect:'none' }}>
+              {FILTER_ICON.owner}
+              <span style={{ fontWeight:400, color:'var(--fg-3)' }}>Owner</span>
+              {filterOwner && <><span style={{ color:'var(--border-strong)', margin:'0 2px' }}>·</span><span style={{ fontWeight:600, color:'var(--brand-blue)' }}>{filterOwner}</span></>}
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m4 6 4 4 4-4"/></svg>
+            </div>
+            {showOwnerDrop && <Dropdown options={allOwners} value={filterOwner} onChange={v => { setFilterOwner(v); setPage(1); }} onClose={() => setShowOwnerDrop(false)} />}
+          </div>
+        )}
+
+        {/* Active filter chips with value */}
+        {(filterStatus||filterEvent||filterOwner) && (
+          <button onClick={() => { setFilterStatus(''); setFilterEvent(''); setFilterOwner(''); setPage(1); }} style={{ height:28, padding:'0 8px', borderRadius:'var(--radius-sm)', border:'none', background:'none', fontSize:12, color:'var(--danger)', cursor:'pointer', fontWeight:500 }}>
+            Clear all
+          </button>
+        )}
+
+        {/* + Add filter */}
+        <div style={{ position:'relative' }}>
+          <button
+            onClick={() => { setShowAddFilter(v => !v); setShowStatusDrop(false); setShowEventDrop(false); setShowOwnerDrop(false); }}
+            style={{ height:30, padding:'0 10px', borderRadius:'var(--radius-sm)', border:'1px dashed var(--border-default)', background:'none', fontSize:12, color:'var(--fg-3)', cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4 }}>
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M8 3v10M3 8h10"/></svg>
+            Add filter
+          </button>
+          {showAddFilter && (
+            <div style={{ position:'absolute', top:'100%', left:0, marginTop:4, background:'var(--bg-surface)', border:'1px solid var(--border-default)', borderRadius:'var(--radius-sm)', boxShadow:'var(--shadow-md)', zIndex:200, minWidth:150, overflow:'hidden' }}>
+              {[
+                { key:'status', label:'Status' },
+                { key:'event',  label:'Event' },
+                { key:'owner',  label:'Owner' },
+              ].filter(f => !activeFilters.includes(f.key)).map(f => (
+                <div key={f.key} onClick={() => addFilter(f.key)} style={{ padding:'8px 12px', fontSize:13, cursor:'pointer', color:'var(--fg-1)', display:'flex', alignItems:'center', gap:7 }}
+                  onMouseEnter={e => e.currentTarget.style.background='var(--bg-muted)'}
+                  onMouseLeave={e => e.currentTarget.style.background='transparent'}>
+                  {FILTER_ICON[f.key]}{f.label}
                 </div>
-              </td>
+              ))}
+              {['status','event','owner'].every(k => activeFilters.includes(k)) && (
+                <div style={{ padding:'8px 12px', fontSize:12, color:'var(--fg-3)' }}>No more filters</div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Table ── */}
+      <div style={{ overflowX:'auto', flex:1 }}>
+        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+          <thead>
+            <tr style={{ background:'var(--bg-muted)' }}>
+              {/* Checkbox */}
+              <th style={{ width:40, padding:'10px 0 10px 16px', borderBottom:'1px solid var(--border-default)' }}>
+                <input type="checkbox" checked={allSelected} onChange={toggleAll}
+                  style={{ width:14, height:14, accentColor:'var(--brand-blue)', cursor:'pointer' }} />
+              </th>
+              {[
+                { label:'Template name',  w:'auto' },
+                { label:'Event',          w:120 },
+                { label:'Category',       w:110 },
+                { label:'Language',       w:110 },
+                { label:'Owner',          w:90  },
+                { label:'Status',         w:140 },
+                { label:'Quality',        w:100 },
+                { label:'7d Delivery',    w:100 },
+                { label:'7d Read',        w:90  },
+                { label:'',               w:76  },
+              ].map((col, i) => (
+                <th key={i} style={{ textAlign:'left', padding:'10px 14px', fontWeight:500, color:'var(--slate-600)', fontSize:12, borderBottom:'1px solid var(--border-default)', whiteSpace:'nowrap', width: col.w !== 'auto' ? col.w : undefined }}>
+                  {col.label}
+                </th>
+              ))}
             </tr>
+          </thead>
+          <tbody>
+            {pageSlice.length === 0 && (
+              <tr>
+                <td colSpan={11} style={{ padding:'40px 16px', textAlign:'center', color:'var(--fg-3)', fontSize:13 }}>
+                  No templates match your filters.
+                </td>
+              </tr>
+            )}
+            {pageSlice.map((t) => {
+              const isHov = hovRow === t.id;
+              const isSel = selected.has(t.id);
+              return (
+                <tr key={t.id}
+                  style={{ borderTop:'1px solid var(--border-default)', background: isSel ? 'var(--brand-blue-100)' : isHov ? 'var(--bg-muted)' : 'transparent', transition:'background .1s' }}
+                  onMouseEnter={() => setHovRow(t.id)}
+                  onMouseLeave={() => setHovRow(null)}
+                >
+                  {/* Checkbox */}
+                  <td style={{ padding:'11px 0 11px 16px', verticalAlign:'middle', width:40 }}>
+                    <input type="checkbox" checked={isSel} onChange={() => toggleRow(t.id)}
+                      style={{ width:14, height:14, accentColor:'var(--brand-blue)', cursor:'pointer' }} />
+                  </td>
+
+                  {/* Template name */}
+                  <td style={{ padding:'11px 14px', verticalAlign:'middle' }}>
+                    <div style={{ fontFamily:'var(--font-mono)', fontSize:13, fontWeight:500, color:'var(--brand-blue)', cursor:'pointer' }} onClick={() => onEdit(t)}>
+                      {t.name}
+                    </div>
+                    {t.buttons?.length > 0 && (
+                      <div style={{ fontSize:11, color:'var(--fg-3)', marginTop:2 }}>
+                        {t.buttons.length} button{t.buttons.length > 1 ? 's' : ''}
+                      </div>
+                    )}
+                  </td>
+
+                  {/* Event */}
+                  <td style={{ padding:'11px 14px', verticalAlign:'middle' }}>
+                    <span style={{ fontSize:12, color:'var(--fg-1)', background:'var(--bg-muted)', padding:'3px 8px', borderRadius:'var(--radius-pill)', fontWeight:500, border:'1px solid var(--border-default)', whiteSpace:'nowrap' }}>
+                      {t.eventLabel}
+                    </span>
+                  </td>
+
+                  {/* Category */}
+                  <td style={{ padding:'11px 14px', verticalAlign:'middle', fontSize:13, color:'var(--fg-2)' }}>
+                    {t.category}
+                  </td>
+
+                  {/* Language */}
+                  <td style={{ padding:'11px 14px', verticalAlign:'middle', fontSize:13, color:'var(--fg-2)' }}>
+                    {t.language === 'en_US' ? 'English (US)' : t.language === 'hi' ? 'Hindi' : t.language}
+                  </td>
+
+                  {/* Owner */}
+                  <td style={{ padding:'11px 14px', verticalAlign:'middle' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                      <div style={{ width:20, height:20, borderRadius:5, background: t.isDefault ? 'var(--brand-blue-100)' : 'var(--bg-muted)', color: t.isDefault ? 'var(--brand-blue)' : 'var(--fg-2)', display:'grid', placeItems:'center', fontSize:10, fontWeight:700, flexShrink:0 }}>
+                        {t.isDefault ? 'D' : 'B'}
+                      </div>
+                      <span style={{ fontSize:12, color: t.isDefault ? 'var(--brand-blue)' : 'var(--fg-2)', fontWeight:500 }}>
+                        {t.isDefault ? 'Dyrect' : 'Brand'}
+                      </span>
+                    </div>
+                  </td>
+
+                  {/* Status */}
+                  <td style={{ padding:'11px 14px', verticalAlign:'middle' }}>
+                    <StatusBadge status={t.status} />
+                    {t.rejectionReason && (
+                      <div style={{ fontSize:11, color:'var(--danger)', marginTop:3, maxWidth:140, lineHeight:1.3, whiteSpace:'normal' }} title={t.rejectionReason}>
+                        {t.rejectionReason.length > 40 ? t.rejectionReason.slice(0,40)+'…' : t.rejectionReason}
+                      </div>
+                    )}
+                  </td>
+
+                  {/* Quality */}
+                  <td style={{ padding:'11px 14px', verticalAlign:'middle' }}>
+                    <QualityPip rating={t.qualityRating} />
+                  </td>
+
+                  {/* 7d Delivery */}
+                  <td style={{ padding:'11px 14px', verticalAlign:'middle', fontFamily:'var(--font-display)', fontWeight:600, fontSize:13, letterSpacing:'-0.02em', color: t.deliveryRate ? 'var(--success)' : 'var(--fg-3)' }}>
+                    {t.deliveryRate != null ? `${t.deliveryRate}%` : '—'}
+                  </td>
+
+                  {/* 7d Read */}
+                  <td style={{ padding:'11px 14px', verticalAlign:'middle', fontFamily:'var(--font-display)', fontWeight:600, fontSize:13, letterSpacing:'-0.02em', color: t.readRate ? 'var(--brand-blue)' : 'var(--fg-3)' }}>
+                    {t.readRate != null ? `${t.readRate}%` : '—'}
+                  </td>
+
+                  {/* Actions */}
+                  <td style={{ padding:'11px 14px', verticalAlign:'middle' }}>
+                    <div style={{ display:'flex', gap:4, opacity: isHov || isSel ? 1 : 0, transition:'opacity .1s' }}>
+                      <button style={tblStyles.actionBtn} onClick={() => onEdit(t)} title="Edit / View">
+                        <Icon name="edit" size={12}/>
+                      </button>
+                      <button style={tblStyles.actionBtn} onClick={() => onClone(t)} title="Clone">
+                        <Icon name="clone" size={12}/>
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ── Pagination footer ── */}
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 16px', borderTop:'1px solid var(--border-default)', background:'var(--bg-surface)', flexShrink:0 }}>
+        {/* Rows per page */}
+        <div style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color:'var(--fg-2)' }}>
+          Rows per page
+          <select value={rowsPerPage} onChange={e => { setRowsPerPage(Number(e.target.value)); setPage(1); }}
+            style={{ height:26, padding:'0 6px', borderRadius:'var(--radius-xs)', border:'1px solid var(--border-default)', background:'var(--bg-surface)', fontSize:12, color:'var(--fg-1)', cursor:'pointer', outline:'none' }}>
+            {ROWS_PER_PAGE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+
+        {/* Page info + nav */}
+        <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, color:'var(--fg-2)' }}>
+          <span>Page <strong style={{ color:'var(--fg-1)' }}>{safePage}</strong> of {totalPages}</span>
+          {/* First */}
+          <button onClick={() => setPage(1)} disabled={safePage===1} style={tblStyles.pageBtn(safePage===1)}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M8 4 4 8l4 4M12 4l-4 4 4 4"/></svg>
+          </button>
+          {/* Prev */}
+          <button onClick={() => setPage(p => Math.max(1, p-1))} disabled={safePage===1} style={tblStyles.pageBtn(safePage===1)}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M10 4 6 8l4 4"/></svg>
+          </button>
+          {/* Page numbers */}
+          {Array.from({ length: totalPages }, (_, i) => i+1).filter(p => Math.abs(p - safePage) <= 1 || p === 1 || p === totalPages).reduce((acc, p, idx, arr) => {
+            if (idx > 0 && p - arr[idx-1] > 1) acc.push('…');
+            acc.push(p);
+            return acc;
+          }, []).map((p, i) => (
+            typeof p === 'string'
+              ? <span key={`ellipsis-${i}`} style={{ padding:'0 4px', color:'var(--fg-3)', fontSize:12 }}>…</span>
+              : <button key={p} onClick={() => setPage(p)} style={{ width:26, height:26, borderRadius:'var(--radius-xs)', border:'1px solid var(--border-default)', background: p === safePage ? 'var(--brand-blue)' : 'var(--bg-surface)', color: p === safePage ? '#fff' : 'var(--fg-1)', fontSize:12, cursor:'pointer', fontWeight: p === safePage ? 600 : 400 }}>{p}</button>
           ))}
-        </tbody>
-      </table>
+          {/* Next */}
+          <button onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={safePage===totalPages} style={tblStyles.pageBtn(safePage===totalPages)}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M6 4l4 4-4 4"/></svg>
+          </button>
+          {/* Last */}
+          <button onClick={() => setPage(totalPages)} disabled={safePage===totalPages} style={tblStyles.pageBtn(safePage===totalPages)}>
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6"><path d="M4 4l4 4-4 4M8 4l4 4-4 4"/></svg>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
 
 const tblStyles = {
   actionBtn: {
-    width:28, height:28, borderRadius:'var(--radius-xs)',
+    width:26, height:26, borderRadius:'var(--radius-xs)',
     border:'1px solid var(--border-default)', background:'var(--bg-surface)',
     display:'grid', placeItems:'center', cursor:'pointer', color:'var(--fg-2)',
   },
+  pageBtn: (disabled) => ({
+    width:26, height:26, borderRadius:'var(--radius-xs)',
+    border:'1px solid var(--border-default)',
+    background: disabled ? 'var(--bg-muted)' : 'var(--bg-surface)',
+    color: disabled ? 'var(--fg-3)' : 'var(--fg-1)',
+    display:'grid', placeItems:'center', cursor: disabled ? 'not-allowed' : 'pointer',
+    opacity: disabled ? 0.5 : 1,
+  }),
 };
 
 const edStyles = {
