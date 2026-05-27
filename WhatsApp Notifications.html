@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WhatsApp Notifications — Dyrect Admin</title>
+<link rel="stylesheet" href="colors_and_type.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body { font-family: var(--font-sans); background: var(--bg-app); color: var(--fg-1); }
+#root { height: 100%; display: flex; }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--slate-200); border-radius: 99px; }
+button, select, textarea, input { font-family: var(--font-sans); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="components/WA_Sidebar.jsx"></script>
+<script type="text/babel" src="components/WA_Overview.jsx"></script>
+<script type="text/babel" src="components/WA_Templates.jsx"></script>
+<script type="text/babel" src="components/WA_Activity.jsx"></script>
+<script type="text/babel" src="components/WA_WABAWizard.jsx"></script>
+<script type="text/babel" src="components/WA_NewTemplate.jsx"></script>
+<script type="text/babel" src="components/WA_EventNotifications.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+/* ── Seed data ─────────────────────────────────────── */
+const SEED = {
+  channel: {
+    senderName: 'Shared Dyrect WABA',
+    phoneNumber: '+91 98765 43210',
+    displayName: 'Dyrect',
+    tier: '10K',
+    qualityRating: 'GREEN',
+    isBYO: false,
+  },
+  stats: {
+    messagesSent7d: 524,
+    deliveryRate: 91.2,
+    readRate: 74.8,
+    optInRate: 83.4,
+    messagesSentTotal: 4218,
+  },
+  events: [
+    { id:'warranty.registered',  label:'Warranty registered',  desc:'Sent when a customer registers a warranty.',         enabled:true,  stats:{ sent:284, delivery:92, read:76 } },
+    { id:'claim.created',        label:'Claim created',        desc:'Sent when a new claim is raised.',                   enabled:true,  stats:{ sent:142, delivery:88, read:73 } },
+    { id:'claim.status_changed', label:'Claim status update',  desc:'Sent whenever a claim moves to a new status.',       enabled:true,  stats:{ sent:98,  delivery:87, read:71 } },
+    { id:'ticket.updated',       label:'Ticket update',        desc:'Sent when a support ticket is updated or resolved.', enabled:false, stats:null },
+  ],
+  templates: [
+    {
+      id:'warranty_registered', name:'warranty_registered', isDefault:true,
+      event:'warranty.registered', eventLabel:'Warranty',
+      category:'Utility', language:'en_US',
+      header: { type:'TEXT', text:'Warranty confirmed ✓' },
+      body:'Hi {{1}}, your warranty for *{{2}}* has been successfully registered.\n\nWarranty ID: *{{3}}*\nValid until: {{4}}\n\nSave this message for your records.',
+      footer:'Dyrect Warranty Services',
+      buttons:[{ type:'URL', label:'View warranty', url:'https://dyrect.co/w/{{3}}' }],
+      variables:[
+        {token:'{{1}}',label:'customer_name',example:'Aarav'},
+        {token:'{{2}}',label:'product_name',example:'boAt Rockerz 480'},
+        {token:'{{3}}',label:'warranty_id',example:'WR-84921'},
+        {token:'{{4}}',label:'expiry_date',example:'Apr 15, 2027'},
+      ],
+      status:'approved', qualityRating:'GREEN', deliveryRate:92, readRate:76, rejectionReason:null,
+    },
+    {
+      id:'claim_created', name:'claim_created', isDefault:true,
+      event:'claim.created', eventLabel:'Claims',
+      category:'Utility', language:'en_US',
+      header: { type:'NONE', text:'' },
+      body:'Hi {{1}}, your claim has been received!\n\nClaim ID: *{{2}}*\nProduct: {{3}}\nIssue: {{4}}\n\nOur team will review it within 24 hours. You\'ll receive updates here.',
+      footer:'Reply STOP to unsubscribe',
+      buttons:[
+        { type:'QUICK_REPLY', label:'Track claim' },
+        { type:'PHONE', label:'Call support', phone:'+918800000000' },
+      ],
+      variables:[
+        {token:'{{1}}',label:'customer_name',example:'Priya'},
+        {token:'{{2}}',label:'claim_id',example:'CL-22047'},
+        {token:'{{3}}',label:'product_name',example:'Sony WH-1000XM5'},
+        {token:'{{4}}',label:'issue_type',example:'Physical damage'},
+      ],
+      status:'approved', qualityRating:'GREEN', deliveryRate:88, readRate:73, rejectionReason:null,
+    },
+    {
+      id:'claim_status_v2', name:'claim_status_v2', isDefault:false,
+      event:'claim.status_changed', eventLabel:'Claims',
+      category:'Utility', language:'en_US',
+      header: { type:'NONE', text:'' },
+      body:'Update on your claim *{{1}}*:\n\nStatus: *{{2}}*\n{{3}}\n\nQuestions? Reply to this message.',
+      footer:'Dyrect Claims',
+      buttons:[],
+      variables:[
+        {token:'{{1}}',label:'claim_id',example:'CL-22047'},
+        {token:'{{2}}',label:'new_status',example:'Under review'},
+        {token:'{{3}}',label:'status_message',example:'Our team is reviewing your documents.'},
+      ],
+      status:'approved', qualityRating:'YELLOW', deliveryRate:87, readRate:70, rejectionReason:null,
+    },
+    {
+      id:'ticket_resolved_v1', name:'ticket_resolved_v1', isDefault:false,
+      event:'ticket.updated', eventLabel:'Support',
+      category:'Utility', language:'en_US',
+      header: { type:'NONE', text:'' },
+      body:'Your support ticket *#{{1}}* has been {{2}}.\n\n{{3}}\n\nRate your experience:',
+      footer:'Dyrect Support',
+      buttons:[{ type:'URL', label:'Rate experience', url:'https://dyrect.co/rate/{{1}}' }],
+      variables:[
+        {token:'{{1}}',label:'ticket_id',example:'TK-5521'},
+        {token:'{{2}}',label:'new_status',example:'resolved'},
+        {token:'{{3}}',label:'resolution_note',example:'Your issue has been fixed.'},
+      ],
+      status:'pending', qualityRating:null, deliveryRate:null, readRate:null, rejectionReason:null,
+    },
+    {
+      id:'warranty_expiry_draft', name:'warranty_expiry_reminder', isDefault:false,
+      event:'warranty.registered', eventLabel:'Warranty',
+      category:'Utility', language:'en_US',
+      header: { type:'IMAGE', text:'' },
+      body:'Hi {{1}}, your warranty for *{{2}}* expires in *30 days* (on {{3}}).\n\nExtend now to stay covered.',
+      footer:'Dyrect Warranty Services',
+      buttons:[{ type:'URL', label:'Extend warranty', url:'https://dyrect.co/extend/{{3}}' }],
+      variables:[
+        {token:'{{1}}',label:'customer_name',example:'Rohan'},
+        {token:'{{2}}',label:'product_name',example:'Philips Air Fryer'},
+        {token:'{{3}}',label:'expiry_date',example:'Jun 22, 2026'},
+      ],
+      status:'rejected', qualityRating:null, deliveryRate:null, readRate:null,
+      rejectionReason:'Template contains an external URL in the body. Use a button CTA instead.',
+    },
+  ],
+  logs: [
+    { id:1,  ts:'Today, 9:41 AM',      customer:'Aarav Mehta',    event:'warranty.registered',  template:'warranty_registered', status:'read',      wamid:'wamid.ABGGFlCGg0cvBo9IK' },
+    { id:2,  ts:'Today, 9:38 AM',      customer:'Priya Sharma',   event:'claim.created',        template:'claim_created',       status:'delivered', wamid:'wamid.ABGGFlCGg0cvBo9IL' },
+    { id:3,  ts:'Today, 9:22 AM',      customer:'Rohan Gupta',    event:'claim.status_changed', template:'claim_status_v2',     status:'read',      wamid:'wamid.ABGGFlCGg0cvBo9IM' },
+    { id:4,  ts:'Today, 9:11 AM',      customer:'Sneha Iyer',     event:'warranty.registered',  template:'warranty_registered', status:'sent',      wamid:'wamid.ABGGFlCGg0cvBo9IN' },
+    { id:5,  ts:'Today, 8:54 AM',      customer:'Vikram Nair',    event:'claim.created',        template:'claim_created',       status:'read',      wamid:'wamid.ABGGFlCGg0cvBo9IO' },
+    { id:6,  ts:'Today, 8:43 AM',      customer:'Ananya Pillai',  event:'warranty.registered',  template:'warranty_registered', status:'failed',    wamid:null },
+    { id:7,  ts:'Today, 8:31 AM',      customer:'Arjun Kapoor',   event:'claim.status_changed', template:'claim_status_v2',     status:'delivered', wamid:'wamid.ABGGFlCGg0cvBo9IP' },
+    { id:8,  ts:'Yesterday, 11:21 PM', customer:'Divya Bose',     event:'warranty.registered',  template:'warranty_registered', status:'read',      wamid:'wamid.ABGGFlCGg0cvBo9IQ' },
+    { id:9,  ts:'Yesterday, 10:15 PM', customer:'Kabir Singh',    event:'claim.created',        template:'claim_created',       status:'read',      wamid:'wamid.ABGGFlCGg0cvBo9IR' },
+    { id:10, ts:'Yesterday, 9:02 PM',  customer:'Meera Joshi',    event:'claim.status_changed', template:'claim_status_v2',     status:'failed',    wamid:null },
+    { id:11, ts:'Yesterday, 6:45 PM',  customer:'Rahul Das',      event:'warranty.registered',  template:'warranty_registered', status:'delivered', wamid:'wamid.ABGGFlCGg0cvBo9IS' },
+    { id:12, ts:'Yesterday, 4:30 PM',  customer:'Tanvi Reddy',    event:'claim.created',        template:'claim_created',       status:'read',      wamid:'wamid.ABGGFlCGg0cvBo9IT' },
+  ],
+};
+
+const TABS = [
+  { id:'overview',           label:'Overview' },
+  { id:'notifications',label:'Notifications' },
+  { id:'templates',          label:'Templates' },
+  { id:'activity',           label:'Activity' },
+];
+
+/* buildInitialNotifData is provided by WA_EventNotifications.jsx */
+
+function App() {
+  const [tab, setTab]                     = useState('overview');
+  const [events, setEvents]               = useState(SEED.events);
+  const [templates, setTemplates]         = useState(SEED.templates);
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const [showWizard, setShowWizard]       = useState(false);
+  const [showNewTemplate, setShowNewTemplate] = useState(false);
+  const [channel, setChannel]             = useState(SEED.channel);
+  const [notifData, setNotifData]         = useState(() => buildInitialNotifData());
+
+  const handleEventToggle = (id, val) =>
+    setEvents(prev => prev.map(e => e.id === id ? { ...e, enabled: val } : e));
+
+  const handleNotifToggle = (moduleId, eventId, channelId, val) => {
+    setNotifData(prev => ({
+      ...prev,
+      [moduleId]: {
+        ...prev[moduleId],
+        [eventId]: { ...prev[moduleId][eventId], [channelId]: val },
+      },
+    }));
+  };
+
+  const handleClone = (t) => {
+    const clone = { ...t, id:t.id+'_copy', name:t.name+'_copy', isDefault:false, status:'pending', qualityRating:null, deliveryRate:null, readRate:null };
+    setTemplates(prev => [...prev, clone]);
+    setEditingTemplate(clone);
+  };
+
+  const handleSaveTemplate = (updated) => {
+    setTemplates(prev => {
+      const exists = prev.find(t => t.id === updated.id);
+      return exists ? prev.map(t => t.id === updated.id ? updated : t) : [...prev, updated];
+    });
+  };
+
+  const handleWizardComplete = ({ phone, form }) => {
+    setChannel(ch => ({
+      ...ch,
+      isBYO: true,
+      senderName: form.wabaName || 'My WABA',
+      displayName: form.displayName || 'Brand',
+      phoneNumber: phone || '+91 98765 43210',
+      tier: '1K',
+      qualityRating: null,
+    }));
+  };
+
+  return (
+    <div style={{ display:'flex', height:'100vh', width:'100%', overflow:'hidden' }}>
+      <WASidebar active="whatsapp" />
+
+      <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        {/* Page header */}
+        <div style={appStyles.pageHeader}>
+          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+            <div style={appStyles.waIconWrap}>
+              <Icon name="whatsapp" size={18} />
+            </div>
+            <div>
+              <div style={appStyles.pageTitle}>WhatsApp Notifications</div>
+              <div style={appStyles.pageBreadcrumb}>Settings</div>
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8 }}>
+            {channel.isBYO && (
+              <span style={{ display:'inline-flex', alignItems:'center', gap:5, height:34, padding:'0 10px', borderRadius:'var(--radius-sm)', background:'#E7F8EE', color:'#25D366', fontSize:12, fontWeight:600 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="m5 12 5 5 9-10"/></svg>
+                BYO WABA active
+              </span>
+            )}
+            <a href="https://business.facebook.com" target="_blank" rel="noreferrer" style={appStyles.btnLink}>
+              <Icon name="external" size={13} /> Meta Business Manager
+            </a>
+          </div>
+        </div>
+
+        {/* Tab bar */}
+        <div style={appStyles.tabBar}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ ...appStyles.tabBtn, ...(tab===t.id ? appStyles.tabBtnActive : {}) }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={appStyles.contentArea}>
+          {tab === 'overview' && (
+            <WAOverview
+              data={{ channel, stats:SEED.stats, events }}
+              onEventToggle={handleEventToggle}
+              onUpgradeWABA={() => setShowWizard(true)}
+            />
+          )}
+          {tab === 'notifications' && (
+            <WAEventNotifications
+              notifData={notifData}
+              onToggle={handleNotifToggle}
+              onOpenTemplate={() => setTab('templates')}
+            />
+          )}
+          {tab === 'templates' && (
+            <WATemplates
+              templates={templates}
+              onEdit={setEditingTemplate}
+              onClone={handleClone}
+              onNewTemplate={() => setShowNewTemplate(true)}
+            />
+          )}
+          {tab === 'activity' && (
+            <WAActivity logs={SEED.logs} />
+          )}
+        </div>
+      </div>
+
+      {editingTemplate && (
+        <WAEditor
+          template={editingTemplate}
+          onClose={() => setEditingTemplate(null)}
+          onSave={handleSaveTemplate}
+        />
+      )}
+
+      {showNewTemplate && (
+        <WANewTemplate
+          onClose={() => setShowNewTemplate(false)}
+          onSave={handleSaveTemplate}
+        />
+      )}
+
+      {showWizard && (
+        <WABAWizard
+          onClose={() => setShowWizard(false)}
+          onComplete={handleWizardComplete}
+        />
+      )}
+    </div>
+  );
+}
+
+const appStyles = {
+  pageHeader: {
+    display:'flex', alignItems:'center', justifyContent:'space-between',
+    padding:'16px 28px 14px', borderBottom:'1px solid var(--border-default)',
+    background:'var(--bg-surface)', flexShrink:0,
+  },
+  waIconWrap: {
+    width:36, height:36, borderRadius:10,
+    background:'#E7F8EE', color:'#25D366',
+    display:'grid', placeItems:'center', flexShrink:0,
+  },
+  pageTitle: { fontSize:16, fontWeight:700, color:'var(--fg-1)', letterSpacing:'-0.02em' },
+  pageBreadcrumb: { fontSize:12, color:'var(--fg-2)', marginTop:1 },
+  btnLink: {
+    height:34, padding:'0 12px', borderRadius:'var(--radius-sm)',
+    border:'1px solid var(--border-default)', background:'var(--bg-surface)',
+    fontSize:13, fontWeight:500, color:'var(--fg-2)', cursor:'pointer',
+    display:'inline-flex', alignItems:'center', gap:6, textDecoration:'none',
+  },
+  tabBar: {
+    display:'flex', gap:0, padding:'0 28px',
+    borderBottom:'1px solid var(--border-default)',
+    background:'var(--bg-surface)', flexShrink:0,
+  },
+  tabBtn: {
+    height:42, padding:'0 16px', border:'none', background:'none',
+    fontSize:14, fontWeight:500, color:'var(--fg-2)', cursor:'pointer',
+    borderBottom:'2px solid transparent', marginBottom:'-1px', transition:'color .1s',
+  },
+  tabBtnActive: { color:'var(--brand-blue)', borderBottomColor:'var(--brand-blue)' },
+  contentArea: { flex:1, overflowY:'auto', padding:'24px 28px' },
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
