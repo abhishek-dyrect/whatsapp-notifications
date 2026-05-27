@@ -39,6 +39,8 @@ function Icon({ name, size = 16 }) {
 }
 
 function WASidebar({ active = 'whatsapp' }) {
+  const [collapsed, setCollapsed] = useState(false);
+
   const NAV_ITEMS = [
     { id: 'home', label: 'Home', icon: 'home' },
     { id: 'customers', label: 'Customers', icon: 'customers' },
@@ -59,153 +61,199 @@ function WASidebar({ active = 'whatsapp' }) {
     },
   ];
 
+  const C = collapsed;
+
   return (
-    <aside style={sidebarStyles.aside}>
-      <div style={sidebarStyles.logo}>
-        <img src="assets/logo-wordmark-blue.png" alt="Dyrect" style={{ height: 22 }} />
-        <div style={sidebarStyles.collapse}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M6 3v10"/>
-          </svg>
-        </div>
-      </div>
+    <>
+      <style>{`
+        .wa-sidebar { transition: width 0.2s cubic-bezier(.4,0,.2,1); }
+        .wa-nav-label { transition: opacity 0.15s, width 0.2s; }
+        .wa-sidebar-item:hover { background: var(--slate-50) !important; }
+        .wa-tooltip { position: relative; }
+        .wa-tooltip::after {
+          content: attr(data-tip);
+          position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%);
+          background: var(--slate-800); color: #fff;
+          font-size: 12px; font-weight: 500; white-space: nowrap;
+          padding: 5px 9px; border-radius: 6px;
+          pointer-events: none; opacity: 0;
+          transition: opacity .12s; z-index: 999;
+          font-family: var(--font-sans);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .wa-tooltip:hover::after { opacity: 1; }
+      `}</style>
 
-      <nav style={sidebarStyles.nav}>
-        {NAV_ITEMS.map((item, i) => {
-          if (item.type === 'sep') return (
-            <div key={i} style={sidebarStyles.sepLabel}>{item.label}</div>
-          );
-          const isParentActive = item.children && item.children.some(c => c.id === active);
-          const isActive = item.id === active;
-          return (
-            <React.Fragment key={item.id}>
-              <a style={{
-                ...sidebarStyles.navItem,
-                ...(isActive || isParentActive ? sidebarStyles.navItemActive : {}),
-              }}>
-                <span style={{ color: isActive || isParentActive ? 'var(--slate-900)' : 'var(--slate-500)', display:'flex' }}>
-                  <Icon name={item.icon} size={16} />
-                </span>
-                <span style={{ flex: 1 }}>{item.label}</span>
-                {item.badge && <span style={sidebarStyles.badge}>{item.badge}</span>}
-                {item.chevron && (
-                  <span style={{ color: 'var(--slate-400)', display:'flex', transform: item.expanded ? 'rotate(180deg)' : 'none', transition:'transform .15s' }}>
-                    <Icon name="chevDown" size={12} />
-                  </span>
-                )}
-              </a>
-              {item.expanded && item.children && item.children.map(child => {
-                const childActive = child.id === active;
-                return (
-                  <a key={child.id} style={{
-                    ...sidebarStyles.navItem,
-                    ...sidebarStyles.navChild,
-                    ...(childActive ? sidebarStyles.navItemActive : {}),
-                  }}>
-                    <span style={{ color: childActive ? 'var(--brand-blue)' : 'var(--slate-400)', display:'flex' }}>
-                      <Icon name={child.icon} size={14} />
-                    </span>
-                    <span style={{ flex: 1 }}>{child.label}</span>
-                    {childActive && (
-                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--brand-blue)' }}></span>
-                    )}
-                  </a>
-                );
-              })}
-            </React.Fragment>
-          );
-        })}
-      </nav>
+      <aside className="wa-sidebar" style={{
+        width: C ? 52 : 248, flexShrink: 0,
+        background: 'var(--bg-surface)',
+        borderRight: '1px solid var(--border-default)',
+        display: 'flex', flexDirection: 'column',
+        height: '100vh', position: 'sticky', top: 0,
+        overflow: 'hidden',
+      }}>
 
-      <div style={sidebarStyles.footer}>
-        <div style={sidebarStyles.searchRow}>
-          <Icon name="search" size={14} />
-          Search
-          <span style={sidebarStyles.kbd}>Ctrl+K</span>
-        </div>
-        <div style={sidebarStyles.userRow}>
-          <div style={sidebarStyles.avatar}>AB</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--slate-800)', lineHeight: 1.3 }}>Abhishek Bindal</div>
-            <div style={{ fontSize: 11, color: 'var(--slate-500)', lineHeight: 1.3 }}>admin@dyrect.co</div>
+        {/* Logo row */}
+        <div style={{
+          padding: C ? '16px 0' : '18px 14px 16px',
+          display: 'flex', alignItems: 'center',
+          justifyContent: C ? 'center' : 'space-between',
+          borderBottom: '1px solid var(--border-default)',
+          minHeight: 57, flexShrink: 0,
+        }}>
+          {!C && <img src="assets/logo-wordmark-blue.png" alt="Dyrect" style={{ height: 22 }} />}
+          <div
+            onClick={() => setCollapsed(v => !v)}
+            title={C ? 'Expand sidebar' : 'Collapse sidebar'}
+            style={{
+              width: 24, height: 24, display: 'grid', placeItems: 'center',
+              color: 'var(--slate-500)', cursor: 'pointer', borderRadius: 4,
+              flexShrink: 0, transition: 'background .1s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = 'var(--slate-100)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+          >
+            {C ? (
+              /* chevron-right / expand icon */
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M10 3v10"/>
+              </svg>
+            ) : (
+              /* sidebar collapse icon */
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                <rect x="2.5" y="3" width="11" height="10" rx="1.5"/><path d="M6 3v10"/>
+              </svg>
+            )}
           </div>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ color: 'var(--slate-400)', flexShrink: 0 }}>
-            <circle cx="3" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="13" cy="8" r="1.3"/>
-          </svg>
         </div>
-      </div>
-    </aside>
+
+        {/* Nav */}
+        <nav style={{
+          flex: 1, overflowY: 'auto', overflowX: 'hidden',
+          padding: C ? '10px 6px' : '10px 10px',
+          display: 'flex', flexDirection: 'column', gap: 1,
+        }}>
+          {NAV_ITEMS.map((item, i) => {
+            if (item.type === 'sep') {
+              if (C) return <div key={i} style={{ height: 1, background: 'var(--border-default)', margin: '8px 4px' }} />;
+              return <div key={i} style={{ fontSize: 11, fontWeight: 500, color: 'var(--slate-400)', padding: '14px 10px 4px', userSelect: 'none' }}>{item.label}</div>;
+            }
+
+            const isParentActive = item.children && item.children.some(c => c.id === active);
+            const isActive = item.id === active;
+            const highlight = isActive || isParentActive;
+
+            return (
+              <React.Fragment key={item.id}>
+                <a
+                  className={`wa-sidebar-item${C ? ' wa-tooltip' : ''}`}
+                  data-tip={C ? item.label : undefined}
+                  style={{
+                    display: 'flex', alignItems: 'center',
+                    gap: C ? 0 : 9,
+                    padding: C ? '8px 0' : '7px 10px',
+                    justifyContent: C ? 'center' : 'flex-start',
+                    borderRadius: 8,
+                    fontSize: 14, fontWeight: 500,
+                    color: highlight ? 'var(--slate-900)' : 'var(--slate-600)',
+                    textDecoration: 'none', cursor: 'pointer', userSelect: 'none',
+                    background: highlight ? 'var(--bg-surface)' : 'transparent',
+                    boxShadow: highlight ? 'inset 0 0 0 1px var(--border-default)' : 'none',
+                    position: 'relative',
+                  }}
+                >
+                  <span style={{ color: highlight ? 'var(--slate-900)' : 'var(--slate-500)', display: 'flex', flexShrink: 0 }}>
+                    <Icon name={item.icon} size={16} />
+                  </span>
+                  {!C && <span style={{ flex: 1, overflow: 'hidden', whiteSpace: 'nowrap' }}>{item.label}</span>}
+                  {!C && item.badge && <span style={{ fontSize: 11, color: 'var(--brand-blue)', fontWeight: 600 }}>{item.badge}</span>}
+                  {!C && item.chevron && (
+                    <span style={{ color: 'var(--slate-400)', display: 'flex', transform: item.expanded ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }}>
+                      <Icon name="chevDown" size={12} />
+                    </span>
+                  )}
+                  {/* Active dot in collapsed mode */}
+                  {C && highlight && (
+                    <span style={{ position: 'absolute', right: 4, top: 4, width: 5, height: 5, borderRadius: '50%', background: 'var(--brand-blue)' }} />
+                  )}
+                </a>
+
+                {/* Children — only show when expanded and not collapsed */}
+                {!C && item.expanded && item.children && item.children.map(child => {
+                  const childActive = child.id === active;
+                  return (
+                    <a key={child.id} className="wa-sidebar-item" style={{
+                      display: 'flex', alignItems: 'center', gap: 9,
+                      padding: '7px 10px', paddingLeft: 28,
+                      borderRadius: 8, fontSize: 13, fontWeight: 400,
+                      color: 'var(--slate-600)', textDecoration: 'none',
+                      cursor: 'pointer', userSelect: 'none',
+                      background: childActive ? 'var(--bg-surface)' : 'transparent',
+                      boxShadow: childActive ? 'inset 0 0 0 1px var(--border-default)' : 'none',
+                    }}>
+                      <span style={{ color: childActive ? 'var(--brand-blue)' : 'var(--slate-400)', display: 'flex' }}>
+                        <Icon name={child.icon} size={14} />
+                      </span>
+                      <span style={{ flex: 1 }}>{child.label}</span>
+                      {childActive && <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--brand-blue)' }} />}
+                    </a>
+                  );
+                })}
+              </React.Fragment>
+            );
+          })}
+        </nav>
+
+        {/* Footer */}
+        <div style={{
+          borderTop: '1px solid var(--border-default)',
+          padding: C ? '8px 6px' : '8px 10px 10px',
+          display: 'flex', flexDirection: 'column', gap: 2, flexShrink: 0,
+        }}>
+          {!C && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 8, fontSize: 14, color: 'var(--slate-600)', cursor: 'pointer' }}>
+              <Icon name="search" size={14} />
+              Search
+              <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--brand-blue)' }}>Ctrl+K</span>
+            </div>
+          )}
+          {C && (
+            <div className="wa-tooltip" data-tip="Search" style={{ display: 'flex', justifyContent: 'center', padding: '7px 0', cursor: 'pointer', borderRadius: 8, color: 'var(--slate-500)' }}>
+              <Icon name="search" size={16} />
+            </div>
+          )}
+          <div style={{
+            display: 'flex', alignItems: 'center',
+            gap: C ? 0 : 9,
+            padding: C ? '7px 0' : '8px 6px',
+            borderTop: '1px solid var(--border-default)',
+            marginTop: 4, cursor: 'pointer',
+            justifyContent: C ? 'center' : 'flex-start',
+          }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 8,
+              background: 'var(--slate-100)', color: 'var(--slate-700)',
+              display: 'grid', placeItems: 'center',
+              fontSize: 11, fontWeight: 600, flexShrink: 0,
+            }}>AB</div>
+            {!C && (
+              <>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--slate-800)', lineHeight: 1.3, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Abhishek Bindal</div>
+                  <div style={{ fontSize: 11, color: 'var(--slate-500)', lineHeight: 1.3 }}>admin@dyrect.co</div>
+                </div>
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style={{ color: 'var(--slate-400)', flexShrink: 0 }}>
+                  <circle cx="3" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="13" cy="8" r="1.3"/>
+                </svg>
+              </>
+            )}
+          </div>
+        </div>
+      </aside>
+    </>
   );
 }
 
-const sidebarStyles = {
-  aside: {
-    width: 248, flexShrink: 0,
-    background: 'var(--bg-surface)',
-    borderRight: '1px solid var(--border-default)',
-    display: 'flex', flexDirection: 'column',
-    height: '100vh', position: 'sticky', top: 0,
-    overflow: 'hidden',
-  },
-  logo: {
-    padding: '18px 14px 16px',
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    borderBottom: '1px solid var(--border-default)',
-  },
-  collapse: {
-    width: 24, height: 24, display: 'grid', placeItems: 'center',
-    color: 'var(--slate-500)', cursor: 'pointer', borderRadius: 4,
-  },
-  nav: {
-    flex: 1, overflowY: 'auto', padding: '10px 10px',
-    display: 'flex', flexDirection: 'column', gap: 1,
-  },
-  sepLabel: {
-    fontSize: 11, fontWeight: 500, color: 'var(--slate-400)',
-    padding: '14px 10px 4px', letterSpacing: 0, userSelect: 'none',
-  },
-  navItem: {
-    display: 'flex', alignItems: 'center', gap: 9,
-    padding: '7px 10px', borderRadius: 8,
-    fontSize: 14, fontWeight: 500, color: 'var(--slate-600)',
-    textDecoration: 'none', cursor: 'pointer', userSelect: 'none',
-  },
-  navItemActive: {
-    background: 'var(--bg-surface)',
-    color: 'var(--slate-900)',
-    boxShadow: 'inset 0 0 0 1px var(--border-default)',
-  },
-  navChild: {
-    paddingLeft: 28, fontSize: 13, fontWeight: 400,
-  },
-  badge: {
-    fontSize: 11, color: 'var(--brand-blue)', fontWeight: 600,
-  },
-  footer: {
-    borderTop: '1px solid var(--border-default)',
-    padding: '8px 10px 10px',
-    display: 'flex', flexDirection: 'column', gap: 2,
-  },
-  searchRow: {
-    display: 'flex', alignItems: 'center', gap: 8,
-    padding: '7px 10px', borderRadius: 8,
-    fontSize: 14, color: 'var(--slate-600)', cursor: 'pointer',
-  },
-  kbd: {
-    marginLeft: 'auto', fontFamily: 'var(--font-mono)',
-    fontSize: 11, color: 'var(--brand-blue)',
-  },
-  userRow: {
-    display: 'flex', alignItems: 'center', gap: 9,
-    padding: '8px 6px', borderTop: '1px solid var(--border-default)',
-    marginTop: 4, cursor: 'pointer',
-  },
-  avatar: {
-    width: 28, height: 28, borderRadius: 8,
-    background: 'var(--slate-100)', color: 'var(--slate-700)',
-    display: 'grid', placeItems: 'center',
-    fontSize: 11, fontWeight: 600, flexShrink: 0,
-  },
-};
+const sidebarStyles = {};
 
 Object.assign(window, { WASidebar, Icon });
